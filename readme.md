@@ -1,60 +1,57 @@
-## Petya2 - Ransomware Open Source Project
+## Petya2 - 랜섬웨어 오픈 소스 프로젝트
 
-This project is meant for Educational Purposes, CyberSecurity Researches and similar stuff. This repository doesn't include any downloadable Binaries as this Project acts the same as the actual Petya Ransomware Executable. Even this would probably not look interesting in 2022 anymore but, there we go.
+이 프로젝트는 교육 목적, 사이버 보안 연구 및 유사한 용도로 설계되었습니다. 이 저장소에는 실제 Petya 랜섬웨어 실행 파일과 동일하게 작동하는 다운로드 가능한 바이너리가 포함되어 있지 않습니다. 2022년에는 더 이상 흥미롭지 않을 수도 있지만, 여전히 유용합니다.
 
-## What is Petya2 ?
-Petya2 is an Open Source (manually coded by me) executable that (has to) acts the same as Petya Ransomware Executable, that has the role of writting the malicious bootloader & micro-kernel, setting up the encryption keys and data for the micro-kernel to work and make the decryption process successful.
+## Petya2란 무엇인가요?
+Petya2는 Petya 랜섬웨어 실행 파일과 동일한 방식으로 작동하는 오픈 소스 실행 파일로, 악성 부트로더 및 마이크로 커널을 작성하고, 마이크로 커널이 작동할 수 있도록 암호화 키와 데이터를 설정하며, 복호화 프로세스를 성공적으로 수행하는 역할을 합니다.
 
-#### How did I make this ?
-Good question! This took me a good time to recognize and understand how Petya actually works.
+#### 어떻게 만들었나요?
+좋은 질문입니다! Petya가 실제로 어떻게 작동하는지 이해하는 데 시간이 많이 걸렸습니다.
 
-Petya2 is made by Reverse Engineering Petya Ransomware, by reading lots of information and by Clean Room Reverse Engineering.
+Petya2는 Petya 랜섬웨어를 역설계하여 작성되었으며, 많은 정보를 읽고 클린 룸 역설계를 통해 만들어졌습니다.
 
-### How did I get Petya's Bootloader and Micro-Kernel ?
-Petya Ransomware **overwrites** the ***M***aster ***B***oot ***R***ecord with its own Bootloader which with, when loaded, jumps and executes the **Sector 34** of the Disk.
-Petya writes the Micro-Kernel at **Sector 34** and it is **16 Sectors Long** (16*512 Bytes Long). From there, you can simply extract what you want.
+### Petya의 부트로더와 마이크로 커널을 어떻게 얻었나요?
+Petya 랜섬웨어는 ***M***aster ***B***oot ***R***ecord를 자신의 부트로더로 **덮어씌웁니다**. 부트로더가 로드되면 디스크의 **섹터 34**로 점프하여 실행됩니다. Petya는 **섹터 34**에 마이크로 커널을 작성하며, 이는 **16 섹터 길이**(16*512 바이트)입니다. 여기서 원하는 정보를 쉽게 추출할 수 있습니다.
 
+## 랜섬웨어 구조
+Petya 실행 파일은 실제로 다음과 같이 구조화되어 있습니다:
 
-## Ransomware Structure
-Petya Executable is actually structured like this:
+   - Petya.exe - **드로퍼**
+      - Setup.dll - **코어**
+      - ~~Mischa.dll~~ (이 버전에는 없음)
+   - Petya의 부트로더 - **실제 모드 부트로더**
+   - Petya의 마이크로 커널 - **실제 모드 커널**
 
-   - Petya.exe - **Dropper**
-      - Setup.dll - **Core**
-      - ~~Mischa.dll~~ (Not present in this version)
-   - Petya's Bootloader - **Real Mode Bootloader**
-   - Petya's Micro-Kernel - **Real Mode Kernel**
- 
- ## Ransomware Structure based on Sectors
- Petya will configure itself using Harddisk's Sectors as the following:
- 
- #### Petya's actions
- 1. Petya will make a copy of system's ***M***aster ***B***oot ***R***ecord, encrypt it with xor (hex 0x37, ansi '7') and place it in sector 56 as backup.
- 2. The ***M***aster ***B***oot ***R***ecord is going to be overwritten with Petya's Bootloader but before that, a copy of the Partition Table will be created (found at offset 446 - 510 in sector 0) and placed on Petya's Bootloader for $MFT's Encryption Process.
- 3. The Micro-Kernel is going to be placed at sector 34 (where it is going to be read, it is 16 sectors long).
- 4. Petya will now encrypt every sector from sector 1 to sector 33 with XOR (hex 0x37, ansi '7').
- 5. Now, the verification sector, which is going to be encrypted & decrypted by the ring 0 kernel, it is located at sector 55, Petya will XOR (hex 0x37, ansi '7') the whole sector and write the result in it.
- 6. The last step, Configuring Sector 54. This sector is the most important one because Petya needs to read it (you'll see more down bellow).
+## 섹터 기반의 랜섬웨어 구조
+Petya는 하드 디스크의 섹터를 다음과 같이 구성합니다:
 
-## Sector 54 (Configuration Sector)
-I made this small picture scheme of how the sector looks like
-![sector54](https://user-images.githubusercontent.com/68382500/156068841-1dca1305-babf-4a60-880b-02eb50f8c7c3.png)
+#### Petya의 동작
+1. Petya는 시스템의 ***M***aster ***B***oot ***R***ecord를 복사하여 XOR(16진수 0x37, ANSI '7')로 암호화한 후, 섹터 56에 백업으로 저장합니다.
+2. ***M***aster ***B***oot ***R***ecord는 Petya의 부트로더로 덮어씌워지지만, 그 전에 파티션 테이블의 복사본(섹터 0의 오프셋 446 - 510에 위치)을 생성하여 Petya의 부트로더에 저장합니다. 이는 $MFT의 암호화 프로세스를 위해 필요합니다.
+3. 마이크로 커널은 섹터 34에 위치하게 되며(여기서 읽히며, 16 섹터 길이입니다).
+4. Petya는 이제 섹터 1부터 섹터 33까지 모든 섹터를 XOR(16진수 0x37, ANSI '7')로 암호화합니다.
+5. 마지막으로, 검증 섹터가 있습니다. 이 섹터는 링 0 커널에 의해 암호화 및 복호화되며, 섹터 55에 위치합니다. Petya는 이 섹터 전체를 XOR(16진수 0x37, ANSI '7')로 처리하고 결과를 기록합니다.
+6. 마지막 단계는 섹터 54 구성입니다. 이 섹터는 Petya가 읽어야 하는 가장 중요한 섹터입니다.
 
-## How does all of that crap work?
-#### First byte from the sector
-First byte of the sector will tell the Micro-Kernel, the stage of your computer.
-If that field is set to **0x00**, Petya's Micro-Kernel will know that the system hasn't been encrypted yet, will generate the Fake Chkdsk screen that will encrypt the $MFT and after that, the field is going to be set to **0x01**.
+## 섹터 54 (구성 섹터)
+이 섹터의 모습에 대한 작은 그림 스킴을 만들었습니다.
+![sector54](URL)
 
-If the field is set to **0x01**, Petya's Micro-Kernel will know that the system is at the moment encrypted and will display the flashing skull followed by the payment screen.
+## 이 모든 것이 어떻게 작동하나요?
+#### 섹터의 첫 번째 바이트
+섹터의 첫 번째 바이트는 마이크로 커널에게 컴퓨터의 상태를 알려줍니다. 이 필드가 **0x00**으로 설정되면, Petya의 마이크로 커널은 시스템이 아직 암호화되지 않았음을 알고, 가짜 체크디스크 화면을 생성하여 $MFT를 암호화한 후 이 필드를 **0x01**로 설정합니다.
 
-Once you enter a valid decryption key in the payment screen, the field is going to be set to **0x02** (which means that the system has been decrypted).
+필드가 **0x01**로 설정되면, Petya의 마이크로 커널은 시스템이 현재 암호화되어 있음을 알고, 깜빡이는 해골과 함께 결제 화면을 표시합니다.
 
-#### Decryption key - Next 32 Bytes from the sector
-The next 32 Bytes is actually the decryption key (that you'll need to write in Petya's payment screen) that is encoded. The process is not really that complex, it is clearly explained in the picture placed upper.
+결제 화면에 유효한 복호화 키를 입력하면 필드는 **0x02**로 설정됩니다(즉, 시스템이 복호화되었다는 의미).
 
-The decryption key is generated randomly, it is a 16 bytes long key generated from this charset "123456789abcdefghijkmnopqrstuvwxABCDEFGHJKLMNPQRSTUVWX". If the key doesn't follow this charset, it is claimed as being invalid.
+#### 복호화 키 - 섹터의 다음 32 바이트
+다음 32 바이트는 실제 복호화 키(사용자가 Petya의 결제 화면에 입력해야 하는 키)로, 인코딩되어 있습니다. 이 과정은 복잡하지 않으며, 위에 있는 그림에서 명확히 설명됩니다.
 
-After generating the 16 bytes long key, Petya will encode the key using a really strange algorithm:
-```
+복호화 키는 무작위로 생성된 16 바이트 길이의 키로, 문자 집합 "123456789abcdefghijkmnopqrstuvwxABCDEFGHJKLMNPQRSTUVWX"에서 생성됩니다. 키가 이 문자 집합을 따르지 않으면 유효하지 않은 것으로 간주됩니다.
+
+16 바이트 길이의 키가 생성된 후, Petya는 다음과 같은 정말 이상한 알고리즘을 사용하여 키를 인코딩합니다:
+```c
 bool encode(char* key, BYTE *encoded)
 {
     if (!key || !encoded) {
@@ -81,17 +78,14 @@ bool encode(char* key, BYTE *encoded)
     return true;
 }
 ```
-(Thanks to @Malwarebytes - @hasherezade)
+(@Malwarebytes - @hasherezade에 감사드립니다)
 
-This algorithm will convert the 16 bytes long key into a 32 bytes long key. This 32 bytes long key will be placed in the Configuration Sector for future Salsa20 Encryption usage.
+이 알고리즘은 16 바이트 길이의 키를 32 바이트 길이의 키로 변환합니다. 이 32 바이트 길이의 키는 향후 Salsa20 암호화 사용을 위해 구성 섹터에 저장됩니다.
 
-Petya's Micro-Kernel is going to Encrypt the Sector 55 (Verification Sector) with 256-bit Salsa20 with this 32 bytes long key and with the Initialization Vector (down bellow).
+Petya의 마이크로 커널은 이 32 바이트 길이의 키와 초기화 벡터를 사용하여 섹터 55(검증 섹터)를 256비트 Salsa20으로 암호화합니다.
 
+### 초기화 벡터 - 다음 8 바이트
+이 키는 암호화에 사용되는 무작위 8 바이트 길이의 키입니다.
 
-### Initialization Vector - Next 8 bytes
-This key is a randomized 8 bytes long key, which is going to be used for encryption.
-
-### Sector 55 ... What is that ?
-The Sector 55 is a verification sector for the Ransomware. Everytime you enter a key in Petya's payment screen, Petya will do a check for that key. The key will pass **ONLY IF** the key is 16 bytes long and **IF** decrypting Sector 55 with this key encoded using the algorithm function shown upper (the one that makes the key 32 bytes long) and using the Initialization Vector key will result in a bunch of 0x37 hex values or ansi '7', the key will pass and the $MFT Decryption Process will begin.
-
-
+### 섹터 55 ... 이것은 무엇인가요?
+섹터 55는 랜섬웨어의 검증 섹터입니다. Petya의 결제 화면에 키를 입력할 때마다 Petya는 해당 키를 확인합니다. 키는 **16 바이트 길이여야 하며** **IF** 이 키를 사용하여 섹터 55를 복호화했을 때 32 바이트 길이로 인코딩된 결과가 0x37(16진수) 또는 ANSI '7'로 이루어져야만 통과합니다. 그러면 $MFT 복호화 프로세스가 시작됩니다.
